@@ -25,28 +25,20 @@ export default function SeekerDashboard() {
 
   // Fetch user's applications
   const {
-    data: applications,
+    data: applications = [],
     isLoading: isLoadingApplications,
   } = useQuery<(Application & { job?: Job, company?: Company })[]>({
     queryKey: ["/api/applications"],
-    queryFn: async () => {
-      const res = await fetch("/api/applications");
-      if (!res.ok) throw new Error("Failed to fetch applications");
-      return res.json();
-    },
+    enabled: !!user, // Only fetch if user is authenticated
   });
 
   // Fetch saved jobs
   const {
-    data: savedJobs,
+    data: savedJobs = [],
     isLoading: isLoadingSavedJobs,
   } = useQuery<(SavedJob & { job?: Job, company?: Company })[]>({
     queryKey: ["/api/saved-jobs"],
-    queryFn: async () => {
-      const res = await fetch("/api/saved-jobs");
-      if (!res.ok) throw new Error("Failed to fetch saved jobs");
-      return res.json();
-    },
+    enabled: !!user, // Only fetch if user is authenticated
   });
 
   // Fetch user profile
@@ -55,11 +47,7 @@ export default function SeekerDashboard() {
     isLoading: isLoadingProfile,
   } = useQuery<Profile>({
     queryKey: ["/api/profile"],
-    queryFn: async () => {
-      const res = await fetch("/api/profile");
-      if (!res.ok) throw new Error("Failed to fetch profile");
-      return res.json();
-    },
+    enabled: !!user, // Only fetch if user is authenticated
   });
 
   // Fetch recommended jobs
@@ -68,11 +56,7 @@ export default function SeekerDashboard() {
     isLoading: isLoadingRecommendedJobs,
   } = useQuery<(Job & { company?: Company })[]>({
     queryKey: ["/api/jobs", "recommended"],
-    queryFn: async () => {
-      const res = await fetch("/api/jobs?recommended=true&limit=5");
-      if (!res.ok) throw new Error("Failed to fetch recommended jobs");
-      return res.json();
-    },
+    enabled: !!user, // Only fetch if user is authenticated
   });
 
   // Calculate profile completion percentage

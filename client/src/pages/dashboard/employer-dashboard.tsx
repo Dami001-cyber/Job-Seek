@@ -39,11 +39,7 @@ export default function EmployerDashboard() {
     isLoading: isLoadingCompany
   } = useQuery<Company>({
     queryKey: ["/api/companies/owner"],
-    queryFn: async () => {
-      const res = await fetch("/api/companies/owner");
-      if (!res.ok) throw new Error("Failed to fetch company");
-      return res.json();
-    },
+    enabled: !!user, // Only fetch if user is authenticated
   });
 
   // Fetch jobs posted by the employer
@@ -62,15 +58,11 @@ export default function EmployerDashboard() {
 
   // Fetch applications for employer's jobs
   const { 
-    data: applications, 
+    data: applications = [], 
     isLoading: isLoadingApplications 
   } = useQuery<(Application & { user?: User, job?: Job })[]>({
     queryKey: ["/api/applications"],
-    queryFn: async () => {
-      const res = await fetch("/api/applications");
-      if (!res.ok) throw new Error("Failed to fetch applications");
-      return res.json();
-    },
+    enabled: !!user, // Only fetch if user is authenticated
   });
 
   // Calculate application statistics
