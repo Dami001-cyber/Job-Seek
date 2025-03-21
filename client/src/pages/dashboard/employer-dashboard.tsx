@@ -18,6 +18,8 @@ import {
   Mail,
   User as UserIcon,
   XCircle,
+  MapPin,
+  Globe,
   CheckCircle,
   ChevronRight,
   MoreHorizontal,

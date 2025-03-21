@@ -63,6 +63,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: "Logged in successfully",
         description: `Welcome back, ${userData.firstName}!`,
       });
+      
+      // Redirect to the appropriate dashboard based on user role
+      let dashboardPath = "/";
+      switch (userData.role) {
+        case "job_seeker":
+          dashboardPath = "/dashboard/seeker";
+          break;
+        case "employer":
+          dashboardPath = "/dashboard/employer";
+          break;
+        case "admin":
+          dashboardPath = "/dashboard/admin";
+          break;
+      }
+      
+      // Use setTimeout to ensure the redirection happens after the state update
+      setTimeout(() => {
+        window.location.href = dashboardPath;
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
@@ -86,6 +105,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         title: "Registration successful",
         description: `Welcome to Seek with Dami, ${userData.firstName}!`,
       });
+      
+      // Redirect to the appropriate dashboard based on user role
+      let dashboardPath = "/";
+      switch (userData.role) {
+        case "job_seeker":
+          dashboardPath = "/dashboard/seeker";
+          break;
+        case "employer":
+          dashboardPath = "/dashboard/employer";
+          break;
+        case "admin":
+          dashboardPath = "/dashboard/admin";
+          break;
+      }
+      
+      // Use setTimeout to ensure the redirection happens after the state update
+      setTimeout(() => {
+        window.location.href = dashboardPath;
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
@@ -105,6 +143,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast({
         title: "Logged out successfully",
       });
+      
+      // Redirect to the login page
+      setTimeout(() => {
+        window.location.href = "/auth";
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
