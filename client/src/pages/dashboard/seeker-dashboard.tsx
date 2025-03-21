@@ -9,14 +9,15 @@ import { Job, Company, Application, SavedJob, Profile } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useLocation } from "wouter";
 import {
-  PaperPlaneTilt,
-  BookmarkSimple,
+  Send,
+  Bookmark,
   Users,
   Eye,
   CheckCircle,
   Clock,
-} from "phosphor-react";
-import { Loader2 } from "lucide-react";
+  Loader2
+} from "lucide-react";
+
 
 export default function SeekerDashboard() {
   const { user } = useAuth();
@@ -113,7 +114,7 @@ export default function SeekerDashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-gray-600 font-medium">Applications</h3>
               <div className="h-10 w-10 bg-blue-50 rounded-full flex items-center justify-center text-primary">
-                <PaperPlaneTilt weight="fill" size={20} />
+                <Send size={20} />
               </div>
             </div>
             {isLoadingApplications ? (
