@@ -156,7 +156,7 @@ export default function SeekerDashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-gray-600 font-medium">Interviews</h3>
               <div className="h-10 w-10 bg-purple-50 rounded-full flex items-center justify-center text-purple-600">
-                <Users weight="fill" size={20} />
+                <Users size={20} />
               </div>
             </div>
             {isLoadingApplications ? (
@@ -177,7 +177,7 @@ export default function SeekerDashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-gray-600 font-medium">Profile Views</h3>
               <div className="h-10 w-10 bg-yellow-50 rounded-full flex items-center justify-center text-yellow-500">
-                <Eye weight="fill" size={20} />
+                <Eye size={20} />
               </div>
             </div>
             <p className="text-3xl font-bold text-gray-900 mb-1">
@@ -450,7 +450,7 @@ export default function SeekerDashboard() {
                 <ul className="space-y-3">
                   <li className="flex items-center text-sm">
                     {user?.firstName && user?.lastName && user?.email ? (
-                      <CheckCircle size={20} weight="fill" className="text-green-500 mr-2" />
+                      <CheckCircle size={20} className="text-green-500 mr-2" />
                     ) : (
                       <Clock size={20} className="text-gray-400 mr-2" />
                     )}
@@ -458,7 +458,7 @@ export default function SeekerDashboard() {
                   </li>
                   <li className="flex items-center text-sm">
                     {profile?.education && Array.isArray(profile.education) && profile.education.length > 0 ? (
-                      <CheckCircle size={20} weight="fill" className="text-green-500 mr-2" />
+                      <CheckCircle size={20} className="text-green-500 mr-2" />
                     ) : (
                       <Clock size={20} className="text-gray-400 mr-2" />
                     )}
@@ -466,7 +466,7 @@ export default function SeekerDashboard() {
                   </li>
                   <li className="flex items-center text-sm">
                     {profile?.experience && Array.isArray(profile.experience) && profile.experience.length > 0 ? (
-                      <CheckCircle size={20} weight="fill" className="text-green-500 mr-2" />
+                      <CheckCircle size={20} className="text-green-500 mr-2" />
                     ) : (
                       <Clock size={20} className="text-gray-400 mr-2" />
                     )}
@@ -474,7 +474,7 @@ export default function SeekerDashboard() {
                   </li>
                   <li className="flex items-center text-sm">
                     {profile?.skills && Array.isArray(profile.skills) && profile.skills.length > 0 ? (
-                      <CheckCircle size={20} weight="fill" className="text-green-500 mr-2" />
+                      <CheckCircle size={20} className="text-green-500 mr-2" />
                     ) : (
                       <Clock size={20} className="text-gray-400 mr-2" />
                     )}
@@ -482,7 +482,7 @@ export default function SeekerDashboard() {
                   </li>
                   <li className="flex items-center text-sm">
                     {profile?.resumeUrl ? (
-                      <CheckCircle size={20} weight="fill" className="text-green-500 mr-2" />
+                      <CheckCircle size={20} className="text-green-500 mr-2" />
                     ) : (
                       <Clock size={20} className="text-gray-400 mr-2" />
                     )}
