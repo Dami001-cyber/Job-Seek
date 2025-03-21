@@ -1,428 +1,530 @@
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
-import { ZodError } from "zod";
-import { 
-  insertJobSchema, 
-  insertApplicationSchema, 
-  insertSavedJobSchema, 
-  insertJobSeekerProfileSchema, 
-  insertEmployerProfileSchema 
-} from "@shared/schema";
-
-// Auth middleware to ensure user is authenticated
-const isAuthenticated = (req: Request, res: Response, next: Function) => {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({ message: "Unauthorized" });
-};
-
-// Role-based middleware
-const hasRole = (roles: string[]) => {
-  return (req: Request, res: Response, next: Function) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    
-    if (!roles.includes(req.user?.role)) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-    
-    next();
-  };
-};
+import { insertJobSchema, insertJobApplicationSchema, insertSavedJobSchema, insertJobSeekerProfileSchema, insertCompanySchema } from "@shared/schema";
+import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes
   setupAuth(app);
 
-  // Jobs routes
-  app.get("/api/jobs", async (req, res) => {
+  // API routes
+  // Jobs
+  app.get("/api/jobs", async (req, res, next) => {
     try {
-      const { search, location, type, remote, minSalary, maxSalary, page = 1, limit = 10 } = req.query;
+      const { title, location, type, isRemote, minSalary, skills } = req.query;
       
-      const jobs = await storage.getJobs({
-        search: search as string,
-        location: location as string,
-        type: type as string,
-        remote: remote === 'true',
-        minSalary: minSalary ? Number(minSalary) : undefined,
-        maxSalary: maxSalary ? Number(maxSalary) : undefined,
-        page: Number(page),
-        limit: Number(limit)
-      });
+      // Build filters object
+      const filters: any = {};
+      if (title) filters.title = title as string;
+      if (location) filters.location = location as string;
+      if (type) filters.type = type as string;
+      if (isRemote) filters.isRemote = isRemote === "true";
+      if (skills) filters.skills = (skills as string).split(",");
+      
+      // Get all active and approved jobs
+      let jobs = await storage.getAllJobs({ ...filters, isActive: true, isApproved: true });
+      
+      // Apply salary filter if specified
+      if (minSalary) {
+        const minSalaryNum = parseInt(minSalary as string);
+        jobs = jobs.filter(job => {
+          // Extract number from salary string (e.g. "$80k - $100k" -> 80000)
+          const salaryMatch = job.salary?.match(/\$?(\d+)k/);
+          if (salaryMatch && salaryMatch[1]) {
+            const jobMinSalary = parseInt(salaryMatch[1]) * 1000;
+            return jobMinSalary >= minSalaryNum;
+          }
+          return true;
+        });
+      }
       
       res.json(jobs);
     } catch (error) {
-      console.error("Error fetching jobs:", error);
-      res.status(500).json({ message: "Failed to fetch jobs" });
+      next(error);
     }
   });
 
-  app.get("/api/jobs/:id", async (req, res) => {
+  app.get("/api/jobs/:id", async (req, res, next) => {
     try {
-      const job = await storage.getJob(Number(req.params.id));
+      const job = await storage.getJob(parseInt(req.params.id));
       if (!job) {
         return res.status(404).json({ message: "Job not found" });
       }
       res.json(job);
     } catch (error) {
-      console.error("Error fetching job:", error);
-      res.status(500).json({ message: "Failed to fetch job" });
+      next(error);
     }
   });
 
-  app.post("/api/jobs", isAuthenticated, hasRole(['employer', 'admin']), async (req, res) => {
+  app.post("/api/jobs", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
+      // Check if user is an employer
+      if (req.user.role !== "employer") {
+        return res.status(403).json({ message: "Only employers can post jobs" });
+      }
+
+      // Get the company for this employer
+      const company = await storage.getCompanyByUserId(req.user.id);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found" });
+      }
+
+      // Validate job data
       const jobData = insertJobSchema.parse({
         ...req.body,
-        employerId: req.user!.id
+        companyId: company.id
       });
-      
+
       const job = await storage.createJob(jobData);
       res.status(201).json(job);
     } catch (error) {
-      if (error instanceof ZodError) {
+      if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid job data", errors: error.errors });
       }
-      console.error("Error creating job:", error);
-      res.status(500).json({ message: "Failed to create job" });
+      next(error);
     }
   });
 
-  app.put("/api/jobs/:id", isAuthenticated, hasRole(['employer', 'admin']), async (req, res) => {
+  app.put("/api/jobs/:id", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      const jobId = Number(req.params.id);
-      const existingJob = await storage.getJob(jobId);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
       
-      if (!existingJob) {
+      if (!job) {
         return res.status(404).json({ message: "Job not found" });
       }
-      
-      // Check if user is the owner or an admin
-      if (existingJob.employerId !== req.user!.id && req.user!.role !== 'admin') {
-        return res.status(403).json({ message: "Not authorized to update this job" });
+
+      // Check if user is the employer who created this job or an admin
+      const company = await storage.getCompany(job.companyId);
+      if (req.user.role !== "admin" && (!company || company.userId !== req.user.id)) {
+        return res.status(403).json({ message: "Not authorized to edit this job" });
       }
-      
-      const jobData = insertJobSchema.parse(req.body);
-      const job = await storage.updateJob(jobId, {
-        ...jobData,
-        employerId: existingJob.employerId // Ensure employerId doesn't change
-      });
-      
-      res.json(job);
+
+      const updatedJob = await storage.updateJob(jobId, req.body);
+      res.json(updatedJob);
     } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid job data", errors: error.errors });
-      }
-      console.error("Error updating job:", error);
-      res.status(500).json({ message: "Failed to update job" });
+      next(error);
     }
   });
 
-  app.delete("/api/jobs/:id", isAuthenticated, hasRole(['employer', 'admin']), async (req, res) => {
+  app.delete("/api/jobs/:id", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      const jobId = Number(req.params.id);
-      const existingJob = await storage.getJob(jobId);
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
       
-      if (!existingJob) {
+      if (!job) {
         return res.status(404).json({ message: "Job not found" });
       }
-      
-      // Check if user is the owner or an admin
-      if (existingJob.employerId !== req.user!.id && req.user!.role !== 'admin') {
+
+      // Check if user is the employer who created this job or an admin
+      const company = await storage.getCompany(job.companyId);
+      if (req.user.role !== "admin" && (!company || company.userId !== req.user.id)) {
         return res.status(403).json({ message: "Not authorized to delete this job" });
       }
-      
+
       await storage.deleteJob(jobId);
-      res.status(204).end();
+      res.status(204).send();
     } catch (error) {
-      console.error("Error deleting job:", error);
-      res.status(500).json({ message: "Failed to delete job" });
+      next(error);
     }
   });
 
-  // Applications routes
-  app.post("/api/applications", isAuthenticated, hasRole(['job_seeker']), async (req, res) => {
+  // Job applications
+  app.post("/api/job-applications", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      const applicationData = insertApplicationSchema.parse({
+      // Check if user is a job seeker
+      if (req.user.role !== "job_seeker") {
+        return res.status(403).json({ message: "Only job seekers can apply for jobs" });
+      }
+
+      // Validate application data
+      const applicationData = insertJobApplicationSchema.parse({
         ...req.body,
-        jobSeekerId: req.user!.id
+        userId: req.user.id
       });
+
+      // Check if job exists and is active
+      const job = await storage.getJob(applicationData.jobId);
+      if (!job || !job.isActive || !job.isApproved) {
+        return res.status(404).json({ message: "Job not found or inactive" });
+      }
+
+      // Check if user already applied
+      const userApplications = await storage.getJobApplicationsByUserId(req.user.id);
+      const alreadyApplied = userApplications.some(app => app.jobId === applicationData.jobId);
       
-      // Check if already applied
-      const existingApplication = await storage.getApplicationByJobAndUser(
-        applicationData.jobId, 
-        req.user!.id
-      );
-      
-      if (existingApplication) {
+      if (alreadyApplied) {
         return res.status(400).json({ message: "You have already applied for this job" });
       }
-      
-      const application = await storage.createApplication(applicationData);
+
+      const application = await storage.createJobApplication(applicationData);
       res.status(201).json(application);
     } catch (error) {
-      if (error instanceof ZodError) {
+      if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid application data", errors: error.errors });
       }
-      console.error("Error submitting application:", error);
-      res.status(500).json({ message: "Failed to submit application" });
+      next(error);
     }
   });
 
-  app.get("/api/applications", isAuthenticated, async (req, res) => {
+  app.get("/api/job-applications", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      let applications;
+      let applications = [];
       
-      if (req.user!.role === 'job_seeker') {
-        applications = await storage.getApplicationsByJobSeeker(req.user!.id);
-      } else if (req.user!.role === 'employer') {
-        applications = await storage.getApplicationsByEmployer(req.user!.id);
-      } else if (req.user!.role === 'admin') {
-        applications = await storage.getAllApplications();
-      } else {
-        return res.status(403).json({ message: "Forbidden" });
+      if (req.user.role === "job_seeker") {
+        // Job seekers can see their own applications
+        applications = await storage.getJobApplicationsByUserId(req.user.id);
+      } else if (req.user.role === "employer") {
+        // Employers can see applications for their jobs
+        const company = await storage.getCompanyByUserId(req.user.id);
+        if (!company) {
+          return res.status(404).json({ message: "Company not found" });
+        }
+        
+        // Get all jobs from this company
+        const companyJobs = await storage.getJobsByCompanyId(company.id);
+        
+        // Get applications for each job
+        applications = [];
+        for (const job of companyJobs) {
+          const jobApplications = await storage.getJobApplicationsByJobId(job.id);
+          applications.push(...jobApplications);
+        }
+      } else if (req.user.role === "admin") {
+        // Admins can see all applications
+        applications = [];
+        const allJobs = await storage.getAllJobs();
+        for (const job of allJobs) {
+          const jobApplications = await storage.getJobApplicationsByJobId(job.id);
+          applications.push(...jobApplications);
+        }
       }
       
       res.json(applications);
     } catch (error) {
-      console.error("Error fetching applications:", error);
-      res.status(500).json({ message: "Failed to fetch applications" });
+      next(error);
     }
   });
 
-  app.put("/api/applications/:id/status", isAuthenticated, hasRole(['employer', 'admin']), async (req, res) => {
+  app.put("/api/job-applications/:id", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      const applicationId = Number(req.params.id);
-      const { status } = req.body;
+      const applicationId = parseInt(req.params.id);
+      const application = await storage.getJobApplication(applicationId);
       
-      if (!['pending', 'reviewing', 'interview', 'rejected', 'accepted'].includes(status)) {
-        return res.status(400).json({ message: "Invalid status" });
-      }
-      
-      const existingApplication = await storage.getApplication(applicationId);
-      
-      if (!existingApplication) {
+      if (!application) {
         return res.status(404).json({ message: "Application not found" });
       }
-      
-      // Check if employer is authorized to update this application
-      if (req.user!.role === 'employer') {
-        const job = await storage.getJob(existingApplication.jobId);
+
+      // Check authorization
+      if (req.user.role === "job_seeker" && application.userId !== req.user.id) {
+        return res.status(403).json({ message: "Not authorized to update this application" });
+      } else if (req.user.role === "employer") {
+        // Check if the job belongs to this employer
+        const job = await storage.getJob(application.jobId);
+        if (!job) {
+          return res.status(404).json({ message: "Job not found" });
+        }
         
-        if (!job || job.employerId !== req.user!.id) {
+        const company = await storage.getCompany(job.companyId);
+        if (!company || company.userId !== req.user.id) {
           return res.status(403).json({ message: "Not authorized to update this application" });
         }
+        
+        // Employers can only update the status
+        if (Object.keys(req.body).filter(key => key !== "status").length > 0) {
+          return res.status(400).json({ message: "Employers can only update the application status" });
+        }
       }
-      
-      const application = await storage.updateApplicationStatus(applicationId, status);
-      res.json(application);
+
+      const updatedApplication = await storage.updateJobApplication(applicationId, req.body);
+      res.json(updatedApplication);
     } catch (error) {
-      console.error("Error updating application status:", error);
-      res.status(500).json({ message: "Failed to update application status" });
+      next(error);
     }
   });
 
-  // Saved Jobs routes
-  app.post("/api/saved-jobs", isAuthenticated, hasRole(['job_seeker']), async (req, res) => {
+  // Saved jobs
+  app.post("/api/saved-jobs", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
+      // Check if user is a job seeker
+      if (req.user.role !== "job_seeker") {
+        return res.status(403).json({ message: "Only job seekers can save jobs" });
+      }
+
+      // Validate data
       const savedJobData = insertSavedJobSchema.parse({
         ...req.body,
-        userId: req.user!.id
+        userId: req.user.id
       });
-      
+
+      // Check if job exists
+      const job = await storage.getJob(savedJobData.jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
       // Check if already saved
-      const existingSavedJob = await storage.getSavedJobByJobAndUser(
-        savedJobData.jobId, 
-        req.user!.id
-      );
+      const userSavedJobs = await storage.getSavedJobsByUserId(req.user.id);
+      const alreadySaved = userSavedJobs.some(saved => saved.jobId === savedJobData.jobId);
       
-      if (existingSavedJob) {
+      if (alreadySaved) {
         return res.status(400).json({ message: "Job already saved" });
       }
-      
-      const savedJob = await storage.saveJob(savedJobData);
+
+      const savedJob = await storage.createSavedJob(savedJobData);
       res.status(201).json(savedJob);
     } catch (error) {
-      if (error instanceof ZodError) {
+      if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
       }
-      console.error("Error saving job:", error);
-      res.status(500).json({ message: "Failed to save job" });
+      next(error);
     }
   });
 
-  app.get("/api/saved-jobs", isAuthenticated, hasRole(['job_seeker']), async (req, res) => {
-    try {
-      const savedJobs = await storage.getSavedJobsByUser(req.user!.id);
-      res.json(savedJobs);
-    } catch (error) {
-      console.error("Error fetching saved jobs:", error);
-      res.status(500).json({ message: "Failed to fetch saved jobs" });
+  app.get("/api/saved-jobs", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
-  });
 
-  app.delete("/api/saved-jobs/:jobId", isAuthenticated, hasRole(['job_seeker']), async (req, res) => {
     try {
-      const jobId = Number(req.params.jobId);
-      await storage.deleteSavedJob(jobId, req.user!.id);
-      res.status(204).end();
-    } catch (error) {
-      console.error("Error removing saved job:", error);
-      res.status(500).json({ message: "Failed to remove saved job" });
-    }
-  });
-
-  // User Profile routes
-  app.get("/api/profile", isAuthenticated, async (req, res) => {
-    try {
-      let profile;
-      
-      if (req.user!.role === 'job_seeker') {
-        profile = await storage.getJobSeekerProfile(req.user!.id);
-      } else if (req.user!.role === 'employer') {
-        profile = await storage.getEmployerProfile(req.user!.id);
-      } else {
-        return res.status(400).json({ message: "Invalid user role" });
+      // Only job seekers can access saved jobs
+      if (req.user.role !== "job_seeker") {
+        return res.status(403).json({ message: "Access denied" });
       }
+
+      const savedJobs = await storage.getSavedJobsByUserId(req.user.id);
       
+      // Get full job details for each saved job
+      const savedJobsWithDetails = await Promise.all(
+        savedJobs.map(async (savedJob) => {
+          const job = await storage.getJob(savedJob.jobId);
+          return {
+            ...savedJob,
+            job
+          };
+        })
+      );
+      
+      res.json(savedJobsWithDetails);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/saved-jobs/:id", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const savedJobId = parseInt(req.params.id);
+      const savedJob = await storage.getSavedJob(savedJobId);
+      
+      if (!savedJob) {
+        return res.status(404).json({ message: "Saved job not found" });
+      }
+
+      // Check if the saved job belongs to this user
+      if (savedJob.userId !== req.user.id) {
+        return res.status(403).json({ message: "Not authorized to delete this saved job" });
+      }
+
+      await storage.deleteSavedJob(savedJobId);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Job seeker profile
+  app.get("/api/job-seeker-profile", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const profile = await storage.getJobSeekerProfileByUserId(req.user.id);
       if (!profile) {
         return res.status(404).json({ message: "Profile not found" });
       }
-      
       res.json(profile);
     } catch (error) {
-      console.error("Error fetching profile:", error);
-      res.status(500).json({ message: "Failed to fetch profile" });
+      next(error);
     }
   });
 
-  app.post("/api/profile/job-seeker", isAuthenticated, hasRole(['job_seeker']), async (req, res) => {
+  app.put("/api/job-seeker-profile", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      // Check if profile already exists
-      const existingProfile = await storage.getJobSeekerProfile(req.user!.id);
-      
-      if (existingProfile) {
-        return res.status(400).json({ message: "Profile already exists, use PUT to update" });
+      // Only job seekers can update their profiles
+      if (req.user.role !== "job_seeker") {
+        return res.status(403).json({ message: "Only job seekers can update profiles" });
       }
+
+      const profile = await storage.getJobSeekerProfileByUserId(req.user.id);
       
-      const profileData = insertJobSeekerProfileSchema.parse({
-        ...req.body,
-        userId: req.user!.id
-      });
-      
-      const profile = await storage.createJobSeekerProfile(profileData);
-      res.status(201).json(profile);
+      if (!profile) {
+        // Create new profile if it doesn't exist
+        const newProfileData = insertJobSeekerProfileSchema.parse({
+          ...req.body,
+          userId: req.user.id
+        });
+        
+        const newProfile = await storage.createJobSeekerProfile(newProfileData);
+        return res.status(201).json(newProfile);
+      }
+
+      // Update existing profile
+      const updatedProfile = await storage.updateJobSeekerProfile(profile.id, req.body);
+      res.json(updatedProfile);
     } catch (error) {
-      if (error instanceof ZodError) {
+      if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid profile data", errors: error.errors });
       }
-      console.error("Error creating profile:", error);
-      res.status(500).json({ message: "Failed to create profile" });
+      next(error);
     }
   });
 
-  app.put("/api/profile/job-seeker", isAuthenticated, hasRole(['job_seeker']), async (req, res) => {
+  // Company
+  app.get("/api/company", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
-      const profileData = insertJobSeekerProfileSchema.parse({
-        ...req.body,
-        userId: req.user!.id
-      });
-      
-      const profile = await storage.updateJobSeekerProfile(req.user!.id, profileData);
-      res.json(profile);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid profile data", errors: error.errors });
+      const company = await storage.getCompanyByUserId(req.user.id);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found" });
       }
-      console.error("Error updating profile:", error);
-      res.status(500).json({ message: "Failed to update profile" });
+      res.json(company);
+    } catch (error) {
+      next(error);
     }
   });
 
-  app.post("/api/profile/employer", isAuthenticated, hasRole(['employer']), async (req, res) => {
-    try {
-      // Check if profile already exists
-      const existingProfile = await storage.getEmployerProfile(req.user!.id);
-      
-      if (existingProfile) {
-        return res.status(400).json({ message: "Profile already exists, use PUT to update" });
-      }
-      
-      const profileData = insertEmployerProfileSchema.parse({
-        ...req.body,
-        userId: req.user!.id
-      });
-      
-      const profile = await storage.createEmployerProfile(profileData);
-      res.status(201).json(profile);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid profile data", errors: error.errors });
-      }
-      console.error("Error creating profile:", error);
-      res.status(500).json({ message: "Failed to create profile" });
+  app.put("/api/company", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
-  });
 
-  app.put("/api/profile/employer", isAuthenticated, hasRole(['employer']), async (req, res) => {
     try {
-      const profileData = insertEmployerProfileSchema.parse({
-        ...req.body,
-        userId: req.user!.id
-      });
-      
-      const profile = await storage.updateEmployerProfile(req.user!.id, profileData);
-      res.json(profile);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid profile data", errors: error.errors });
+      // Only employers can update their company
+      if (req.user.role !== "employer") {
+        return res.status(403).json({ message: "Only employers can update company details" });
       }
-      console.error("Error updating profile:", error);
-      res.status(500).json({ message: "Failed to update profile" });
+
+      const company = await storage.getCompanyByUserId(req.user.id);
+      
+      if (!company) {
+        // Create new company if it doesn't exist
+        const newCompanyData = insertCompanySchema.parse({
+          ...req.body,
+          userId: req.user.id
+        });
+        
+        const newCompany = await storage.createCompany(newCompanyData);
+        return res.status(201).json(newCompany);
+      }
+
+      // Update existing company
+      const updatedCompany = await storage.updateCompany(company.id, req.body);
+      res.json(updatedCompany);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid company data", errors: error.errors });
+      }
+      next(error);
     }
   });
 
   // Admin routes
-  app.get("/api/admin/users", isAuthenticated, hasRole(['admin']), async (req, res) => {
+  app.get("/api/admin/users", async (req, res, next) => {
+    if (!req.isAuthenticated() || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
     try {
       const users = await storage.getAllUsers();
       res.json(users);
     } catch (error) {
-      console.error("Error fetching users:", error);
-      res.status(500).json({ message: "Failed to fetch users" });
+      next(error);
     }
   });
 
-  app.put("/api/admin/jobs/:id/approve", isAuthenticated, hasRole(['admin']), async (req, res) => {
+  app.put("/api/admin/users/:id", async (req, res, next) => {
+    if (!req.isAuthenticated() || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
     try {
-      const jobId = Number(req.params.id);
-      const { approved } = req.body;
+      const userId = parseInt(req.params.id);
+      const user = await storage.getUser(userId);
       
-      const job = await storage.approveJob(jobId, approved);
-      res.json(job);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const updatedUser = await storage.updateUser(userId, req.body);
+      res.json(updatedUser);
     } catch (error) {
-      console.error("Error approving job:", error);
-      res.status(500).json({ message: "Failed to approve job" });
+      next(error);
     }
   });
 
-  app.put("/api/admin/users/:id/status", isAuthenticated, hasRole(['admin']), async (req, res) => {
+  app.put("/api/admin/jobs/:id/approve", async (req, res, next) => {
+    if (!req.isAuthenticated() || req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
     try {
-      const userId = Number(req.params.id);
-      const { active } = req.body;
+      const jobId = parseInt(req.params.id);
+      const job = await storage.getJob(jobId);
       
-      const user = await storage.setUserStatus(userId, active);
-      res.json(user);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+
+      const updatedJob = await storage.updateJob(jobId, { isApproved: true });
+      res.json(updatedJob);
     } catch (error) {
-      console.error("Error updating user status:", error);
-      res.status(500).json({ message: "Failed to update user status" });
+      next(error);
     }
   });
 
   const httpServer = createServer(app);
+
   return httpServer;
 }

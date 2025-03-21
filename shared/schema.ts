@@ -1,145 +1,154 @@
-import { pgTable, text, serial, integer, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Enums
-export const userRoleEnum = pgEnum('user_role', ['job_seeker', 'employer', 'admin']);
-export const jobTypeEnum = pgEnum('job_type', ['full_time', 'part_time', 'contract', 'internship', 'remote']);
-export const applicationStatusEnum = pgEnum('application_status', ['pending', 'reviewing', 'interview', 'rejected', 'accepted']);
+// User roles
+export enum UserRole {
+  JOB_SEEKER = "job_seeker",
+  EMPLOYER = "employer",
+  ADMIN = "admin"
+}
 
-// Users Table
+// User schema
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   email: text("email").notNull().unique(),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  role: userRoleEnum("role").notNull().default('job_seeker'),
-  profilePicture: text("profile_picture"),
-  createdAt: timestamp("created_at").defaultNow(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  role: text("role").$type<UserRole>().notNull().default(UserRole.JOB_SEEKER),
+  isActive: boolean("is_active").notNull().default(true),
 });
 
-// Job Seeker Profile Table
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+  email: true,
+  firstName: true,
+  lastName: true,
+  role: true,
+});
+
+// Job seeker profile schema
 export const jobSeekerProfiles = pgTable("job_seeker_profiles", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
   title: text("title"),
   bio: text("bio"),
-  resumeUrl: text("resume_url"),
+  resume: text("resume"),
   skills: text("skills").array(),
-  experience: integer("experience"),
-  education: text("education"),
+  experience: jsonb("experience"),
+  education: jsonb("education"),
   location: text("location"),
 });
 
-// Employer Profile Table
-export const employerProfiles = pgTable("employer_profiles", {
+export const insertJobSeekerProfileSchema = createInsertSchema(jobSeekerProfiles).pick({
+  userId: true,
+  title: true,
+  bio: true,
+  resume: true,
+  skills: true,
+  experience: true,
+  education: true,
+  location: true,
+});
+
+// Company schema
+export const companies = pgTable("companies", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
-  companyName: text("company_name").notNull(),
-  companyLogo: text("company_logo"),
-  industry: text("industry"),
-  companySize: text("company_size"),
-  companyDescription: text("company_description"),
+  name: text("name").notNull(),
+  description: text("description"),
+  logo: text("logo"),
   website: text("website"),
+  industry: text("industry"),
   location: text("location"),
 });
 
-// Jobs Table
+export const insertCompanySchema = createInsertSchema(companies).pick({
+  userId: true,
+  name: true,
+  description: true,
+  logo: true,
+  website: true,
+  industry: true,
+  location: true,
+});
+
+// Job schema
 export const jobs = pgTable("jobs", {
   id: serial("id").primaryKey(),
-  employerId: integer("employer_id").notNull().references(() => users.id),
+  companyId: integer("company_id").notNull().references(() => companies.id),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  company: text("company").notNull(),
-  companyLogo: text("company_logo"),
   location: text("location").notNull(),
   salary: text("salary"),
-  type: jobTypeEnum("type").notNull(),
-  requirements: text("requirements"),
+  type: text("type").notNull(), // Full-time, Part-time, Contract, etc.
+  skills: text("skills").array(),
   isRemote: boolean("is_remote").default(false),
   isActive: boolean("is_active").default(true),
+  isApproved: boolean("is_approved").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-  expiresAt: timestamp("expires_at"),
-  approved: boolean("approved").default(false),
 });
 
-// Applications Table
-export const applications = pgTable("applications", {
+export const insertJobSchema = createInsertSchema(jobs).pick({
+  companyId: true,
+  title: true,
+  description: true,
+  location: true,
+  salary: true,
+  type: true,
+  skills: true,
+  isRemote: true,
+});
+
+// Job application schema
+export const jobApplications = pgTable("job_applications", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id").notNull().references(() => jobs.id),
-  jobSeekerId: integer("job_seeker_id").notNull().references(() => users.id),
-  resumeUrl: text("resume_url"),
+  userId: integer("user_id").notNull().references(() => users.id),
+  resume: text("resume"),
   coverLetter: text("cover_letter"),
-  status: applicationStatusEnum("status").default('pending'),
-  appliedAt: timestamp("applied_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  status: text("status").default("pending"), // pending, reviewed, rejected, accepted
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Saved Jobs Table
+export const insertJobApplicationSchema = createInsertSchema(jobApplications).pick({
+  jobId: true,
+  userId: true,
+  resume: true,
+  coverLetter: true,
+});
+
+// Saved jobs schema
 export const savedJobs = pgTable("saved_jobs", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id").notNull().references(() => jobs.id),
   userId: integer("user_id").notNull().references(() => users.id),
-  savedAt: timestamp("saved_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Insert Schemas
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
+export const insertSavedJobSchema = createInsertSchema(savedJobs).pick({
+  jobId: true,
+  userId: true,
 });
 
-export const insertJobSeekerProfileSchema = createInsertSchema(jobSeekerProfiles).omit({
-  id: true,
-});
-
-export const insertEmployerProfileSchema = createInsertSchema(employerProfiles).omit({
-  id: true,
-});
-
-export const insertJobSchema = createInsertSchema(jobs).omit({
-  id: true,
-  createdAt: true,
-  approved: true,
-});
-
-export const insertApplicationSchema = createInsertSchema(applications).omit({
-  id: true,
-  appliedAt: true,
-  updatedAt: true,
-  status: true,
-});
-
-export const insertSavedJobSchema = createInsertSchema(savedJobs).omit({
-  id: true,
-  savedAt: true,
-});
-
-// Export Types
-export type User = typeof users.$inferSelect;
+// Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
 
-export type JobSeekerProfile = typeof jobSeekerProfiles.$inferSelect;
 export type InsertJobSeekerProfile = z.infer<typeof insertJobSeekerProfileSchema>;
+export type JobSeekerProfile = typeof jobSeekerProfiles.$inferSelect;
 
-export type EmployerProfile = typeof employerProfiles.$inferSelect;
-export type InsertEmployerProfile = z.infer<typeof insertEmployerProfileSchema>;
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type Company = typeof companies.$inferSelect;
 
-export type Job = typeof jobs.$inferSelect;
 export type InsertJob = z.infer<typeof insertJobSchema>;
+export type Job = typeof jobs.$inferSelect;
 
-export type Application = typeof applications.$inferSelect;
-export type InsertApplication = z.infer<typeof insertApplicationSchema>;
+export type InsertJobApplication = z.infer<typeof insertJobApplicationSchema>;
+export type JobApplication = typeof jobApplications.$inferSelect;
 
-export type SavedJob = typeof savedJobs.$inferSelect;
 export type InsertSavedJob = z.infer<typeof insertSavedJobSchema>;
-
-// Login Schema
-export const loginSchema = z.object({
-  username: z.string().min(3, "Username is required"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
-
-export type LoginData = z.infer<typeof loginSchema>;
+export type SavedJob = typeof savedJobs.$inferSelect;

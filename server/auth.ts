@@ -30,12 +30,12 @@ async function comparePasswords(supplied: string, stored: string) {
 
 export function setupAuth(app: Express) {
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "seek-with-dami-secret",
+    secret: process.env.SESSION_SECRET || "seekwithdami-secret-key",
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
     }
   };
 
@@ -46,39 +46,35 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
-      try {
-        const user = await storage.getUserByUsername(username);
-        if (!user || !(await comparePasswords(password, user.password))) {
-          return done(null, false);
-        } else {
-          return done(null, user);
-        }
-      } catch (error) {
-        return done(error);
+      const user = await storage.getUserByUsername(username);
+      if (!user || !(await comparePasswords(password, user.password))) {
+        return done(null, false);
+      } else if (!user.isActive) {
+        return done(null, false, { message: "Account is inactive" });
+      } else {
+        return done(null, user);
       }
     }),
   );
 
   passport.serializeUser((user, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
-    try {
-      const user = await storage.getUser(id);
-      done(null, user);
-    } catch (error) {
-      done(error);
-    }
+    const user = await storage.getUser(id);
+    done(null, user);
   });
 
   app.post("/api/register", async (req, res, next) => {
     try {
+      // Check if username already exists
       const existingUser = await storage.getUserByUsername(req.body.username);
       if (existingUser) {
-        return res.status(400).send("Username already exists");
+        return res.status(400).json({ message: "Username already exists" });
       }
-
+      
+      // Check if email already exists
       const existingEmail = await storage.getUserByEmail(req.body.email);
       if (existingEmail) {
-        return res.status(400).send("Email already exists");
+        return res.status(400).json({ message: "Email already exists" });
       }
 
       const user = await storage.createUser({
@@ -86,17 +82,57 @@ export function setupAuth(app: Express) {
         password: await hashPassword(req.body.password),
       });
 
+      // Create default profile for job seekers
+      if (user.role === "job_seeker") {
+        await storage.createJobSeekerProfile({
+          userId: user.id,
+          title: "",
+          bio: "",
+          resume: "",
+          skills: [],
+          experience: [],
+          education: [],
+          location: "",
+        });
+      }
+
+      // Create default company for employers
+      if (user.role === "employer") {
+        await storage.createCompany({
+          userId: user.id,
+          name: `${user.firstName} ${user.lastName}'s Company`,
+          description: "",
+          logo: "",
+          website: "",
+          industry: "",
+          location: "",
+        });
+      }
+
       req.login(user, (err) => {
         if (err) return next(err);
-        res.status(201).json(user);
+        // Return user without the password
+        const { password, ...userWithoutPassword } = user;
+        res.status(201).json(userWithoutPassword);
       });
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/login", passport.authenticate("local"), (req, res) => {
-    res.status(200).json(req.user);
+  app.post("/api/login", (req, res, next) => {
+    passport.authenticate("local", (err, user, info) => {
+      if (err) return next(err);
+      if (!user) {
+        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+      }
+      req.login(user, (loginErr) => {
+        if (loginErr) return next(loginErr);
+        // Return user without the password
+        const { password, ...userWithoutPassword } = user;
+        return res.status(200).json(userWithoutPassword);
+      });
+    })(req, res, next);
   });
 
   app.post("/api/logout", (req, res, next) => {
@@ -108,6 +144,8 @@ export function setupAuth(app: Express) {
 
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    res.json(req.user);
+    // Return user without the password
+    const { password, ...userWithoutPassword } = req.user;
+    res.json(userWithoutPassword);
   });
 }
