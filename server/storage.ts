@@ -1,173 +1,144 @@
-import { users, User, InsertUser, companies, InsertCompany, Company, jobs, Job, InsertJob, jobSeekerProfiles, JobSeekerProfile, InsertJobSeekerProfile, jobApplications, JobApplication, InsertJobApplication, savedJobs, SavedJob, InsertSavedJob, UserRole } from "@shared/schema";
-import session from "express-session";
+import { 
+  users, type User, type InsertUser,
+  jobs, type Job, type InsertJob,
+  companies, type Company, type InsertCompany,
+  applications, type Application, type InsertApplication,
+  profiles, type Profile, type InsertProfile,
+  savedJobs, type SavedJob, type InsertSavedJob
+} from "@shared/schema";
 import createMemoryStore from "memorystore";
+import session from "express-session";
 
 const MemoryStore = createMemoryStore(session);
 
+// Interface for storage methods
 export interface IStorage {
-  // Users
+  // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, user: Partial<InsertUser>): Promise<User>;
+  updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
+  deleteUser(id: number): Promise<boolean>;
   getAllUsers(): Promise<User[]>;
   
-  // Companies
-  getCompany(id: number): Promise<Company | undefined>;
-  getCompanyByUserId(userId: number): Promise<Company | undefined>;
-  createCompany(company: InsertCompany): Promise<Company>;
-  updateCompany(id: number, company: Partial<InsertCompany>): Promise<Company>;
-  getAllCompanies(): Promise<Company[]>;
-  
-  // Jobs
+  // Job methods
   getJob(id: number): Promise<Job | undefined>;
-  getJobsByCompanyId(companyId: number): Promise<Job[]>;
   createJob(job: InsertJob): Promise<Job>;
-  updateJob(id: number, job: Partial<InsertJob>): Promise<Job>;
+  updateJob(id: number, job: Partial<Job>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<boolean>;
   getAllJobs(filters?: Partial<Job>): Promise<Job[]>;
+  searchJobs(query: string, filters?: Partial<Job>): Promise<Job[]>;
   
-  // Job Seeker Profiles
-  getJobSeekerProfile(id: number): Promise<JobSeekerProfile | undefined>;
-  getJobSeekerProfileByUserId(userId: number): Promise<JobSeekerProfile | undefined>;
-  createJobSeekerProfile(profile: InsertJobSeekerProfile): Promise<JobSeekerProfile>;
-  updateJobSeekerProfile(id: number, profile: Partial<InsertJobSeekerProfile>): Promise<JobSeekerProfile>;
+  // Company methods
+  getCompany(id: number): Promise<Company | undefined>;
+  createCompany(company: InsertCompany): Promise<Company>;
+  updateCompany(id: number, company: Partial<Company>): Promise<Company | undefined>;
+  deleteCompany(id: number): Promise<boolean>;
+  getAllCompanies(): Promise<Company[]>;
+  getCompanyByOwnerId(ownerId: number): Promise<Company | undefined>;
   
-  // Job Applications
-  getJobApplication(id: number): Promise<JobApplication | undefined>;
-  getJobApplicationsByUserId(userId: number): Promise<JobApplication[]>;
-  getJobApplicationsByJobId(jobId: number): Promise<JobApplication[]>;
-  createJobApplication(application: InsertJobApplication): Promise<JobApplication>;
-  updateJobApplication(id: number, application: Partial<InsertJobApplication>): Promise<JobApplication>;
+  // Application methods
+  getApplication(id: number): Promise<Application | undefined>;
+  createApplication(application: InsertApplication): Promise<Application>;
+  updateApplication(id: number, application: Partial<Application>): Promise<Application | undefined>;
+  deleteApplication(id: number): Promise<boolean>;
+  getApplicationsByUser(userId: number): Promise<Application[]>;
+  getApplicationsByJob(jobId: number): Promise<Application[]>;
   
-  // Saved Jobs
+  // Profile methods
+  getProfile(userId: number): Promise<Profile | undefined>;
+  createProfile(profile: InsertProfile): Promise<Profile>;
+  updateProfile(userId: number, profile: Partial<Profile>): Promise<Profile | undefined>;
+  
+  // Saved jobs methods
   getSavedJob(id: number): Promise<SavedJob | undefined>;
-  getSavedJobsByUserId(userId: number): Promise<SavedJob[]>;
   createSavedJob(savedJob: InsertSavedJob): Promise<SavedJob>;
   deleteSavedJob(id: number): Promise<boolean>;
+  getSavedJobsByUser(userId: number): Promise<SavedJob[]>;
+  getSavedJobByUserAndJob(userId: number, jobId: number): Promise<SavedJob | undefined>;
   
-  // Session store
+  // Session store for auth
   sessionStore: session.SessionStore;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
-  private companies: Map<number, Company>;
   private jobs: Map<number, Job>;
-  private jobSeekerProfiles: Map<number, JobSeekerProfile>;
-  private jobApplications: Map<number, JobApplication>;
+  private companies: Map<number, Company>;
+  private applications: Map<number, Application>;
+  private profiles: Map<number, Profile>;
   private savedJobs: Map<number, SavedJob>;
   
-  userId: number;
-  companyId: number;
-  jobId: number;
-  profileId: number;
-  applicationId: number;
-  savedJobId: number;
+  userCurrentId: number;
+  jobCurrentId: number;
+  companyCurrentId: number;
+  applicationCurrentId: number;
+  profileCurrentId: number;
+  savedJobCurrentId: number;
   
   sessionStore: session.SessionStore;
-  
+
   constructor() {
     this.users = new Map();
-    this.companies = new Map();
     this.jobs = new Map();
-    this.jobSeekerProfiles = new Map();
-    this.jobApplications = new Map();
+    this.companies = new Map();
+    this.applications = new Map();
+    this.profiles = new Map();
     this.savedJobs = new Map();
     
-    this.userId = 1;
-    this.companyId = 1;
-    this.jobId = 1;
-    this.profileId = 1;
-    this.applicationId = 1;
-    this.savedJobId = 1;
+    this.userCurrentId = 1;
+    this.jobCurrentId = 1;
+    this.companyCurrentId = 1;
+    this.applicationCurrentId = 1;
+    this.profileCurrentId = 1;
+    this.savedJobCurrentId = 1;
     
     this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    });
-    
-    // Create initial admin user
-    this.createUser({
-      username: "admin",
-      password: "adminpassword",
-      email: "admin@seekwithdami.com",
-      firstName: "Admin",
-      lastName: "User",
-      role: UserRole.ADMIN
+      checkPeriod: 86400000 // Prune expired entries every 24h
     });
   }
-  
+
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     return this.users.get(id);
   }
-  
+
   async getUserByUsername(username: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
-      (user) => user.username === username,
+      (user) => user.username.toLowerCase() === username.toLowerCase(),
     );
   }
   
   async getUserByEmail(email: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
-      (user) => user.email === email,
+      (user) => user.email.toLowerCase() === email.toLowerCase(),
     );
   }
-  
+
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userId++;
-    const user: User = { ...insertUser, id, isActive: true };
+    const id = this.userCurrentId++;
+    const createdAt = new Date();
+    const user: User = { ...insertUser, id, createdAt };
     this.users.set(id, user);
     return user;
   }
   
-  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User> {
-    const existingUser = await this.getUser(id);
-    if (!existingUser) {
-      throw new Error("User not found");
-    }
+  async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
+    const user = await this.getUser(id);
+    if (!user) return undefined;
     
-    const updatedUser = { ...existingUser, ...userData };
+    const updatedUser = { ...user, ...userData };
     this.users.set(id, updatedUser);
     return updatedUser;
   }
   
+  async deleteUser(id: number): Promise<boolean> {
+    return this.users.delete(id);
+  }
+  
   async getAllUsers(): Promise<User[]> {
     return Array.from(this.users.values());
-  }
-  
-  // Company methods
-  async getCompany(id: number): Promise<Company | undefined> {
-    return this.companies.get(id);
-  }
-  
-  async getCompanyByUserId(userId: number): Promise<Company | undefined> {
-    return Array.from(this.companies.values()).find(
-      (company) => company.userId === userId,
-    );
-  }
-  
-  async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const id = this.companyId++;
-    const company: Company = { ...insertCompany, id };
-    this.companies.set(id, company);
-    return company;
-  }
-  
-  async updateCompany(id: number, companyData: Partial<InsertCompany>): Promise<Company> {
-    const existingCompany = await this.getCompany(id);
-    if (!existingCompany) {
-      throw new Error("Company not found");
-    }
-    
-    const updatedCompany = { ...existingCompany, ...companyData };
-    this.companies.set(id, updatedCompany);
-    return updatedCompany;
-  }
-  
-  async getAllCompanies(): Promise<Company[]> {
-    return Array.from(this.companies.values());
   }
   
   // Job methods
@@ -175,33 +146,21 @@ export class MemStorage implements IStorage {
     return this.jobs.get(id);
   }
   
-  async getJobsByCompanyId(companyId: number): Promise<Job[]> {
-    return Array.from(this.jobs.values()).filter(
-      (job) => job.companyId === companyId,
-    );
-  }
-  
   async createJob(insertJob: InsertJob): Promise<Job> {
-    const id = this.jobId++;
-    const now = new Date();
-    const job: Job = { 
-      ...insertJob, 
-      id, 
-      isActive: true, 
-      isApproved: false, 
-      createdAt: now 
-    };
+    const id = this.jobCurrentId++;
+    const createdAt = new Date();
+    const updatedAt = new Date();
+    const job: Job = { ...insertJob, id, createdAt, updatedAt };
     this.jobs.set(id, job);
     return job;
   }
   
-  async updateJob(id: number, jobData: Partial<InsertJob>): Promise<Job> {
-    const existingJob = await this.getJob(id);
-    if (!existingJob) {
-      throw new Error("Job not found");
-    }
+  async updateJob(id: number, jobData: Partial<Job>): Promise<Job | undefined> {
+    const job = await this.getJob(id);
+    if (!job) return undefined;
     
-    const updatedJob = { ...existingJob, ...jobData };
+    const updatedAt = new Date();
+    const updatedJob = { ...job, ...jobData, updatedAt };
     this.jobs.set(id, updatedJob);
     return updatedJob;
   }
@@ -215,115 +174,168 @@ export class MemStorage implements IStorage {
     
     if (filters) {
       jobs = jobs.filter(job => {
-        return Object.entries(filters).every(([key, value]) => {
-          if (key === 'skills' && value) {
-            const filterSkills = value as string[];
-            return filterSkills.some(skill => job.skills?.includes(skill));
-          }
-          
-          if (value === undefined) {
-            return true;
-          }
-          
-          return job[key as keyof Job] === value;
-        });
+        for (const [key, value] of Object.entries(filters)) {
+          if (job[key as keyof Job] !== value) return false;
+        }
+        return true;
       });
     }
     
     return jobs;
   }
   
-  // Job Seeker Profile methods
-  async getJobSeekerProfile(id: number): Promise<JobSeekerProfile | undefined> {
-    return this.jobSeekerProfiles.get(id);
+  async searchJobs(query: string, filters?: Partial<Job>): Promise<Job[]> {
+    query = query.toLowerCase();
+    let jobs = Array.from(this.jobs.values());
+    
+    // Filter by search query
+    jobs = jobs.filter(job => {
+      return job.title.toLowerCase().includes(query) || 
+             job.description.toLowerCase().includes(query) ||
+             job.location.toLowerCase().includes(query);
+    });
+    
+    // Apply additional filters
+    if (filters) {
+      jobs = jobs.filter(job => {
+        for (const [key, value] of Object.entries(filters)) {
+          if (job[key as keyof Job] !== value) return false;
+        }
+        return true;
+      });
+    }
+    
+    return jobs;
   }
   
-  async getJobSeekerProfileByUserId(userId: number): Promise<JobSeekerProfile | undefined> {
-    return Array.from(this.jobSeekerProfiles.values()).find(
-      (profile) => profile.userId === userId,
+  // Company methods
+  async getCompany(id: number): Promise<Company | undefined> {
+    return this.companies.get(id);
+  }
+  
+  async createCompany(insertCompany: InsertCompany): Promise<Company> {
+    const id = this.companyCurrentId++;
+    const createdAt = new Date();
+    const company: Company = { ...insertCompany, id, createdAt };
+    this.companies.set(id, company);
+    return company;
+  }
+  
+  async updateCompany(id: number, companyData: Partial<Company>): Promise<Company | undefined> {
+    const company = await this.getCompany(id);
+    if (!company) return undefined;
+    
+    const updatedCompany = { ...company, ...companyData };
+    this.companies.set(id, updatedCompany);
+    return updatedCompany;
+  }
+  
+  async deleteCompany(id: number): Promise<boolean> {
+    return this.companies.delete(id);
+  }
+  
+  async getAllCompanies(): Promise<Company[]> {
+    return Array.from(this.companies.values());
+  }
+  
+  async getCompanyByOwnerId(ownerId: number): Promise<Company | undefined> {
+    return Array.from(this.companies.values()).find(
+      (company) => company.ownerId === ownerId,
     );
   }
   
-  async createJobSeekerProfile(insertProfile: InsertJobSeekerProfile): Promise<JobSeekerProfile> {
-    const id = this.profileId++;
-    const profile: JobSeekerProfile = { ...insertProfile, id };
-    this.jobSeekerProfiles.set(id, profile);
-    return profile;
+  // Application methods
+  async getApplication(id: number): Promise<Application | undefined> {
+    return this.applications.get(id);
   }
   
-  async updateJobSeekerProfile(id: number, profileData: Partial<InsertJobSeekerProfile>): Promise<JobSeekerProfile> {
-    const existingProfile = await this.getJobSeekerProfile(id);
-    if (!existingProfile) {
-      throw new Error("Profile not found");
-    }
+  async createApplication(insertApplication: InsertApplication): Promise<Application> {
+    const id = this.applicationCurrentId++;
+    const createdAt = new Date();
+    const updatedAt = new Date();
+    const application: Application = { ...insertApplication, id, createdAt, updatedAt };
+    this.applications.set(id, application);
+    return application;
+  }
+  
+  async updateApplication(id: number, applicationData: Partial<Application>): Promise<Application | undefined> {
+    const application = await this.getApplication(id);
+    if (!application) return undefined;
     
-    const updatedProfile = { ...existingProfile, ...profileData };
-    this.jobSeekerProfiles.set(id, updatedProfile);
-    return updatedProfile;
+    const updatedAt = new Date();
+    const updatedApplication = { ...application, ...applicationData, updatedAt };
+    this.applications.set(id, updatedApplication);
+    return updatedApplication;
   }
   
-  // Job Application methods
-  async getJobApplication(id: number): Promise<JobApplication | undefined> {
-    return this.jobApplications.get(id);
+  async deleteApplication(id: number): Promise<boolean> {
+    return this.applications.delete(id);
   }
   
-  async getJobApplicationsByUserId(userId: number): Promise<JobApplication[]> {
-    return Array.from(this.jobApplications.values()).filter(
+  async getApplicationsByUser(userId: number): Promise<Application[]> {
+    return Array.from(this.applications.values()).filter(
       (application) => application.userId === userId,
     );
   }
   
-  async getJobApplicationsByJobId(jobId: number): Promise<JobApplication[]> {
-    return Array.from(this.jobApplications.values()).filter(
+  async getApplicationsByJob(jobId: number): Promise<Application[]> {
+    return Array.from(this.applications.values()).filter(
       (application) => application.jobId === jobId,
     );
   }
   
-  async createJobApplication(insertApplication: InsertJobApplication): Promise<JobApplication> {
-    const id = this.applicationId++;
-    const now = new Date();
-    const application: JobApplication = { 
-      ...insertApplication, 
-      id, 
-      status: "pending", 
-      createdAt: now 
-    };
-    this.jobApplications.set(id, application);
-    return application;
+  // Profile methods
+  async getProfile(userId: number): Promise<Profile | undefined> {
+    return Array.from(this.profiles.values()).find(
+      (profile) => profile.userId === userId,
+    );
   }
   
-  async updateJobApplication(id: number, applicationData: Partial<InsertJobApplication>): Promise<JobApplication> {
-    const existingApplication = await this.getJobApplication(id);
-    if (!existingApplication) {
-      throw new Error("Job application not found");
-    }
+  async createProfile(insertProfile: InsertProfile): Promise<Profile> {
+    const id = this.profileCurrentId++;
+    const updatedAt = new Date();
+    const profile: Profile = { ...insertProfile, id, updatedAt };
+    this.profiles.set(id, profile);
+    return profile;
+  }
+  
+  async updateProfile(userId: number, profileData: Partial<Profile>): Promise<Profile | undefined> {
+    const profile = await this.getProfile(userId);
+    if (!profile) return undefined;
     
-    const updatedApplication = { ...existingApplication, ...applicationData };
-    this.jobApplications.set(id, updatedApplication);
-    return updatedApplication;
+    const updatedAt = new Date();
+    const updatedProfile = { ...profile, ...profileData, updatedAt };
+    this.profiles.set(profile.id, updatedProfile);
+    return updatedProfile;
   }
   
-  // Saved Jobs methods
+  // Saved jobs methods
   async getSavedJob(id: number): Promise<SavedJob | undefined> {
     return this.savedJobs.get(id);
   }
   
-  async getSavedJobsByUserId(userId: number): Promise<SavedJob[]> {
-    return Array.from(this.savedJobs.values()).filter(
-      (savedJob) => savedJob.userId === userId,
-    );
-  }
-  
   async createSavedJob(insertSavedJob: InsertSavedJob): Promise<SavedJob> {
-    const id = this.savedJobId++;
-    const now = new Date();
-    const savedJob: SavedJob = { ...insertSavedJob, id, createdAt: now };
+    const id = this.savedJobCurrentId++;
+    const createdAt = new Date();
+    const savedJob: SavedJob = { ...insertSavedJob, id, createdAt };
     this.savedJobs.set(id, savedJob);
     return savedJob;
   }
   
   async deleteSavedJob(id: number): Promise<boolean> {
     return this.savedJobs.delete(id);
+  }
+  
+  async getSavedJobsByUser(userId: number): Promise<SavedJob[]> {
+    return Array.from(this.savedJobs.values()).filter(
+      (savedJob) => savedJob.userId === userId,
+    );
+  }
+  
+  async getSavedJobByUserAndJob(userId: number, jobId: number): Promise<SavedJob | undefined> {
+    return Array.from(this.savedJobs.values()).find(
+      (savedJob) => savedJob.userId === userId && savedJob.jobId === jobId,
+    );
   }
 }
 

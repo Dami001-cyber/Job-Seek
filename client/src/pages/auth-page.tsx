@@ -1,26 +1,14 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { useForm } from "react-hook-form";
-import { UserRole } from "@shared/schema";
+import { MainLayout } from "@/components/layouts/main-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -30,495 +18,385 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
-import { Loader2 } from "lucide-react";
-
-const loginSchema = z.object({
-  username: z.string().min(3, {
-    message: "Username must be at least 3 characters.",
-  }),
-  password: z.string().min(6, {
-    message: "Password must be at least 6 characters.",
-  }),
-  rememberMe: z.boolean().default(false),
-});
-
-const registerSchema = z.object({
-  username: z.string().min(3, {
-    message: "Username must be at least 3 characters.",
-  }),
-  password: z.string().min(8, {
-    message: "Password must be at least 8 characters.",
-  }).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, {
-    message: "Password must include at least one uppercase letter, one lowercase letter, one number, and one special character.",
-  }),
-  email: z.string().email({
-    message: "Please enter a valid email address.",
-  }),
-  firstName: z.string().min(2, {
-    message: "First name must be at least 2 characters.",
-  }),
-  lastName: z.string().min(2, {
-    message: "Last name must be at least 2 characters.",
-  }),
-  role: z.nativeEnum(UserRole),
-  agreeTerms: z.literal(true, {
-    errorMap: () => ({ message: "You must agree to the terms and conditions." }),
-  }),
-});
-
-type LoginFormValues = z.infer<typeof loginSchema>;
-type RegisterFormValues = z.infer<typeof registerSchema>;
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { registerSchema, loginSchema } from "@/hooks/use-auth";
+import { z } from "zod";
+import { useLocation } from "wouter";
 
 export default function AuthPage() {
+  const { user, loginMutation, registerMutation, redirectToDashboard } = useAuth();
+  const { toast } = useToast();
   const [location, navigate] = useLocation();
-  const { user, loginMutation, registerMutation } = useAuth();
-  const [activeTab, setActiveTab] = useState("login");
-  const [selectedRole, setSelectedRole] = useState<UserRole>(UserRole.JOB_SEEKER);
-  
-  // Parse query parameters
-  const params = new URLSearchParams(location.split("?")[1]);
-  const redirectPath = params.get("redirect") || "/";
-  const tabParam = params.get("tab");
-  const roleParam = params.get("role");
-  
-  useEffect(() => {
-    if (tabParam === "register") {
-      setActiveTab("register");
-    }
-    if (roleParam === "employer") {
-      setSelectedRole(UserRole.EMPLOYER);
-    }
-  }, [tabParam, roleParam]);
+  const searchParams = new URLSearchParams(location.split("?")[1] || "");
+  const [tab, setTab] = useState(searchParams.get("tab") || "login");
+  const initialRole = searchParams.get("role") || "job_seeker";
 
-  // If user is already logged in, redirect
+  // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      navigate(redirectPath);
+      navigate(redirectToDashboard());
     }
-  }, [user, navigate, redirectPath]);
+  }, [user, navigate, redirectToDashboard]);
 
-  const loginForm = useForm<LoginFormValues>({
+  // Login form
+  const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       username: "",
       password: "",
-      rememberMe: false,
     },
   });
 
-  const registerForm = useForm<RegisterFormValues>({
+  // Register form
+  const registerForm = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       username: "",
-      password: "",
       email: "",
+      password: "",
+      confirmPassword: "",
       firstName: "",
       lastName: "",
-      role: selectedRole,
-      agreeTerms: false,
+      role: initialRole,
     },
   });
 
-  // Update register form role value when selectedRole changes
-  useEffect(() => {
-    registerForm.setValue("role", selectedRole);
-  }, [selectedRole, registerForm]);
+  const onLoginSubmit = (data: z.infer<typeof loginSchema>) => {
+    loginMutation.mutate(data);
+  };
 
-  function onSubmitLogin(data: LoginFormValues) {
-    loginMutation.mutate({
-      username: data.username,
-      password: data.password,
-    });
-  }
-
-  function onSubmitRegister(data: RegisterFormValues) {
-    registerMutation.mutate({
-      username: data.username,
-      password: data.password,
-      email: data.email,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      role: data.role,
-    });
-  }
+  const onRegisterSubmit = (data: z.infer<typeof registerSchema>) => {
+    registerMutation.mutate(data);
+  };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      
-      <div className="flex-grow flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Auth forms column */}
-          <div className="bg-white shadow overflow-hidden rounded-lg">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="w-full">
-                <TabsTrigger value="login" className="flex-1">Login</TabsTrigger>
-                <TabsTrigger value="register" className="flex-1">Register</TabsTrigger>
+    <MainLayout>
+      <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        {/* Left side - Auth forms */}
+        <div className="w-full lg:w-1/2 flex items-center justify-center pb-12 lg:pb-0">
+          <Card className="w-full max-w-md mx-auto">
+            <Tabs defaultValue={tab} onValueChange={setTab}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="login">Login</TabsTrigger>
+                <TabsTrigger value="register">Sign Up</TabsTrigger>
               </TabsList>
-              
+
+              {/* Login Form */}
               <TabsContent value="login">
-                <Card className="border-0 shadow-none">
-                  <CardHeader>
-                    <CardTitle className="text-2xl font-bold">Log in to your account</CardTitle>
-                    <CardDescription>Welcome back! Please enter your credentials.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Form {...loginForm}>
-                      <form onSubmit={loginForm.handleSubmit(onSubmitLogin)} className="space-y-4">
-                        <FormField
-                          control={loginForm.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Username</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Enter your username" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={loginForm.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <div className="flex items-center justify-between">
-                                <FormLabel>Password</FormLabel>
-                                <a href="#" className="text-sm font-medium text-primary hover:text-primary/90">
-                                  Forgot password?
-                                </a>
-                              </div>
-                              <FormControl>
-                                <Input type="password" placeholder="Enter your password" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={loginForm.control}
-                          name="rememberMe"
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <div className="space-y-1 leading-none">
-                                <FormLabel>Remember me</FormLabel>
-                              </div>
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <Button 
-                          type="submit" 
-                          className="w-full" 
-                          disabled={loginMutation.isPending}
-                        >
-                          {loginMutation.isPending ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Logging in...
-                            </>
-                          ) : (
-                            "Sign in"
-                          )}
-                        </Button>
-                      </form>
-                    </Form>
-                  </CardContent>
-                  <CardFooter className="flex flex-col">
-                    <div className="relative w-full mb-4">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-300"></div>
-                      </div>
-                      <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-white text-gray-500">Or continue with</span>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3 w-full">
-                      <Button variant="outline" className="w-full">
-                        <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                          <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
-                            <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
-                            <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
-                            <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
-                            <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
-                          </g>
-                        </svg>
-                        Google
-                      </Button>
-                      <Button variant="outline" className="w-full">
-                        <svg className="w-5 h-5 mr-2 text-[#0A66C2]" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"></path>
-                        </svg>
-                        LinkedIn
-                      </Button>
-                    </div>
-                    
-                    <p className="mt-4 text-center text-sm text-gray-500">
-                      Don't have an account?{" "}
-                      <button 
-                        className="font-medium text-primary hover:text-primary/90"
-                        onClick={() => setActiveTab("register")}
-                      >
-                        Sign up
-                      </button>
-                    </p>
-                  </CardFooter>
-                </Card>
-              </TabsContent>
-              
-              <TabsContent value="register">
-                <Card className="border-0 shadow-none">
-                  <CardHeader>
-                    <CardTitle className="text-2xl font-bold">Create your account</CardTitle>
-                    <CardDescription>Join thousands finding their dream jobs.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="mb-6">
-                      <div className="flex justify-center space-x-4">
-                        <Button
-                          type="button"
-                          className={selectedRole === UserRole.JOB_SEEKER ? "bg-primary-50 text-primary border-2 border-primary" : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"}
-                          variant="outline"
-                          onClick={() => setSelectedRole(UserRole.JOB_SEEKER)}
-                        >
-                          Job Seeker
-                        </Button>
-                        <Button
-                          type="button"
-                          className={selectedRole === UserRole.EMPLOYER ? "bg-primary-50 text-primary border-2 border-primary" : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"}
-                          variant="outline"
-                          onClick={() => setSelectedRole(UserRole.EMPLOYER)}
-                        >
-                          Employer
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <Form {...registerForm}>
-                      <form onSubmit={registerForm.handleSubmit(onSubmitRegister)} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={registerForm.control}
-                            name="firstName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>First name</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="John" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="lastName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Last name</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Doe" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                <CardHeader>
+                  <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
+                  <CardDescription>
+                    Sign in to your account to continue
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Form {...loginForm}>
+                    <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
+                      <FormField
+                        control={loginForm.control}
+                        name="username"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Username</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter your username" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={loginForm.control}
+                        name="password"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox id="remember" />
+                          <Label htmlFor="remember" className="text-sm">
+                            Remember me
+                          </Label>
                         </div>
-
-                        <FormField
-                          control={registerForm.control}
-                          name="email"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Email address</FormLabel>
-                              <FormControl>
-                                <Input type="email" placeholder="john.doe@example.com" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={registerForm.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Username</FormLabel>
-                              <FormControl>
-                                <Input placeholder="johndoe" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={registerForm.control}
-                          name="password"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Password</FormLabel>
-                              <FormControl>
-                                <Input type="password" placeholder="••••••••" {...field} />
-                              </FormControl>
-                              <p className="text-xs text-gray-500 mt-1">
-                                Must be at least 8 characters with a number and a special character.
-                              </p>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={registerForm.control}
-                          name="agreeTerms"
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <div className="space-y-1 leading-none">
-                                <FormLabel>
-                                  I agree to the{" "}
-                                  <a href="#" className="text-primary hover:text-primary/90">
-                                    Terms of Service
-                                  </a>{" "}
-                                  and{" "}
-                                  <a href="#" className="text-primary hover:text-primary/90">
-                                    Privacy Policy
-                                  </a>
-                                </FormLabel>
-                                <FormMessage />
-                              </div>
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <Button 
-                          type="submit" 
-                          className="w-full" 
-                          disabled={registerMutation.isPending}
-                        >
-                          {registerMutation.isPending ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Creating account...
-                            </>
-                          ) : (
-                            "Create account"
-                          )}
+                        <Button variant="link" className="p-0 h-auto text-sm" onClick={() => toast({ title: "Feature coming soon", description: "Password reset functionality will be available soon." })}>
+                          Forgot password?
                         </Button>
-                      </form>
-                    </Form>
-                  </CardContent>
-                  <CardFooter className="flex flex-col">
-                    <div className="relative w-full mb-4">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-300"></div>
                       </div>
-                      <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-white text-gray-500">Or continue with</span>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3 w-full">
-                      <Button variant="outline" className="w-full">
-                        <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                          <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
-                            <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
-                            <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
-                            <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
-                            <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
-                          </g>
-                        </svg>
-                        Google
-                      </Button>
-                      <Button variant="outline" className="w-full">
-                        <svg className="w-5 h-5 mr-2 text-[#0A66C2]" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"></path>
-                        </svg>
-                        LinkedIn
-                      </Button>
-                    </div>
-                    
-                    <p className="mt-4 text-center text-sm text-gray-500">
-                      Already have an account?{" "}
-                      <button 
-                        className="font-medium text-primary hover:text-primary/90"
-                        onClick={() => setActiveTab("login")}
+                      <Button 
+                        type="submit" 
+                        className="w-full" 
+                        disabled={loginMutation.isPending}
                       >
-                        Log in
-                      </button>
-                    </p>
-                  </CardFooter>
-                </Card>
+                        {loginMutation.isPending ? "Signing in..." : "Sign in"}
+                      </Button>
+                      <div className="relative mt-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-gray-200"></div>
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                          <span className="px-2 bg-white text-gray-500">Or continue with</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button variant="outline" type="button" className="w-full">
+                          <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                            <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                          </svg>
+                          Google
+                        </Button>
+                        <Button variant="outline" type="button" className="w-full">
+                          <svg className="mr-2 h-4 w-4 text-[#0A66C2]" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="linkedin-in" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
+                            <path fill="currentColor" d="M100.28 448H7.4V148.9h92.88zM53.79 108.1C24.09 108.1 0 83.5 0 53.8a53.79 53.79 0 0 1 107.58 0c0 29.7-24.1 54.3-53.79 54.3zM447.9 448h-92.68V302.4c0-34.7-.7-79.2-48.29-79.2-48.29 0-55.69 37.7-55.69 76.7V448h-92.78V148.9h89.08v40.8h1.3c12.4-23.5 42.69-48.3 87.88-48.3 94 0 111.28 61.9 111.28 142.3V448z"></path>
+                          </svg>
+                          LinkedIn
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </CardContent>
+              </TabsContent>
+
+              {/* Register Form */}
+              <TabsContent value="register">
+                <CardHeader>
+                  <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
+                  <CardDescription>
+                    Join Seek with Dami to find your dream job
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Form {...registerForm}>
+                    <form onSubmit={registerForm.handleSubmit(onRegisterSubmit)} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={registerForm.control}
+                          name="firstName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>First name</FormLabel>
+                              <FormControl>
+                                <Input placeholder="John" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={registerForm.control}
+                          name="lastName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Last name</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Doe" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <FormField
+                        control={registerForm.control}
+                        name="username"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Username</FormLabel>
+                            <FormControl>
+                              <Input placeholder="johndoe" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registerForm.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email</FormLabel>
+                            <FormControl>
+                              <Input type="email" placeholder="john.doe@example.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registerForm.control}
+                        name="password"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registerForm.control}
+                        name="confirmPassword"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Confirm password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={registerForm.control}
+                        name="role"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>I am a:</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select account type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="job_seeker">Job Seeker</SelectItem>
+                                <SelectItem value="employer">Employer</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="terms" required />
+                        <Label htmlFor="terms" className="text-sm">
+                          I agree to the{" "}
+                          <Button variant="link" className="p-0 h-auto text-sm" onClick={() => toast({ title: "Terms and Conditions", description: "Terms page will be available soon." })}>
+                            Terms and Conditions
+                          </Button>{" "}
+                          and{" "}
+                          <Button variant="link" className="p-0 h-auto text-sm" onClick={() => toast({ title: "Privacy Policy", description: "Privacy policy page will be available soon." })}>
+                            Privacy Policy
+                          </Button>
+                        </Label>
+                      </div>
+                      <Button 
+                        type="submit" 
+                        className="w-full" 
+                        disabled={registerMutation.isPending}
+                      >
+                        {registerMutation.isPending ? "Creating account..." : "Create account"}
+                      </Button>
+                      <div className="relative mt-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-gray-200"></div>
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                          <span className="px-2 bg-white text-gray-500">Or sign up with</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button variant="outline" type="button" className="w-full">
+                          <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                            <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+                          </svg>
+                          Google
+                        </Button>
+                        <Button variant="outline" type="button" className="w-full">
+                          <svg className="mr-2 h-4 w-4 text-[#0A66C2]" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="linkedin-in" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
+                            <path fill="currentColor" d="M100.28 448H7.4V148.9h92.88zM53.79 108.1C24.09 108.1 0 83.5 0 53.8a53.79 53.79 0 0 1 107.58 0c0 29.7-24.1 54.3-53.79 54.3zM447.9 448h-92.68V302.4c0-34.7-.7-79.2-48.29-79.2-48.29 0-55.69 37.7-55.69 76.7V448h-92.78V148.9h89.08v40.8h1.3c12.4-23.5 42.69-48.3 87.88-48.3 94 0 111.28 61.9 111.28 142.3V448z"></path>
+                          </svg>
+                          LinkedIn
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </CardContent>
               </TabsContent>
             </Tabs>
-          </div>
-          
-          {/* Hero column */}
-          <div className="hidden lg:block rounded-lg overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-primary to-indigo-500 text-white p-8 flex flex-col justify-center">
-              <div className="max-w-md mx-auto text-center">
-                <h2 className="text-3xl font-bold mb-6">Your Career Journey Starts Here</h2>
-                <p className="text-lg mb-8">
-                  Join Seek with Dami to discover opportunities that match your skills and career goals. Connect with top employers and take the next step in your professional journey.
-                </p>
-                <img 
-                  src="https://images.unsplash.com/photo-1573497620053-ea5300f94f21?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" 
-                  alt="Professional job seekers" 
-                  className="rounded-lg shadow-xl mb-8" 
-                />
-                <div className="grid grid-cols-2 gap-4 text-left">
-                  <div className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-primary-100" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Access to thousands of job listings</span>
-                  </div>
-                  <div className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-primary-100" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Create and manage your professional profile</span>
-                  </div>
-                  <div className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-primary-100" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Track your job applications</span>
-                  </div>
-                  <div className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-primary-100" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Connect directly with employers</span>
-                  </div>
+          </Card>
+        </div>
+
+        {/* Right side - Hero section */}
+        <div className="w-full lg:w-1/2 bg-primary text-white p-8 md:p-12 lg:p-16 rounded-xl mt-8 lg:mt-0">
+          <div className="max-w-lg mx-auto lg:mx-0">
+            <h2 className="text-3xl md:text-4xl font-bold mb-6">Find Your Dream Job Today</h2>
+            <p className="text-lg mb-8 text-blue-100">
+              Join the thousands of job seekers who have found their perfect career match on Seek with Dami.
+            </p>
+            <div className="space-y-6">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium">Access to Thousands of Jobs</h3>
+                  <p className="mt-2 text-blue-100">Browse through our extensive database of job listings across various industries.</p>
                 </div>
               </div>
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium">Powerful Job Matching</h3>
+                  <p className="mt-2 text-blue-100">Our intelligent matching algorithm connects you with jobs that fit your skills and experience.</p>
+                </div>
+              </div>
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium">Easy Application Process</h3>
+                  <p className="mt-2 text-blue-100">Apply to jobs with just a few clicks and track your application status in real-time.</p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-12">
+              <img
+                src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80"
+                alt="Job interview scene"
+                className="rounded-lg max-h-64 mx-auto object-cover"
+              />
             </div>
           </div>
         </div>
       </div>
-      
-      <Footer />
-    </div>
+    </MainLayout>
   );
 }

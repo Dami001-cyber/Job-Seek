@@ -34,9 +34,6 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    }
   };
 
   app.set("trust proxy", 1);
@@ -49,8 +46,6 @@ export function setupAuth(app: Express) {
       const user = await storage.getUserByUsername(username);
       if (!user || !(await comparePasswords(password, user.password))) {
         return done(null, false);
-      } else if (!user.isActive) {
-        return done(null, false, { message: "Account is inactive" });
       } else {
         return done(null, user);
       }
@@ -65,54 +60,30 @@ export function setupAuth(app: Express) {
 
   app.post("/api/register", async (req, res, next) => {
     try {
-      // Check if username already exists
-      const existingUser = await storage.getUserByUsername(req.body.username);
-      if (existingUser) {
+      // Check if username exists
+      const existingUsername = await storage.getUserByUsername(req.body.username);
+      if (existingUsername) {
         return res.status(400).json({ message: "Username already exists" });
       }
       
-      // Check if email already exists
+      // Check if email exists
       const existingEmail = await storage.getUserByEmail(req.body.email);
       if (existingEmail) {
         return res.status(400).json({ message: "Email already exists" });
       }
-
+      
+      // Create the user with hashed password
       const user = await storage.createUser({
         ...req.body,
         password: await hashPassword(req.body.password),
       });
-
-      // Create default profile for job seekers
-      if (user.role === "job_seeker") {
-        await storage.createJobSeekerProfile({
-          userId: user.id,
-          title: "",
-          bio: "",
-          resume: "",
-          skills: [],
-          experience: [],
-          education: [],
-          location: "",
-        });
-      }
-
-      // Create default company for employers
-      if (user.role === "employer") {
-        await storage.createCompany({
-          userId: user.id,
-          name: `${user.firstName} ${user.lastName}'s Company`,
-          description: "",
-          logo: "",
-          website: "",
-          industry: "",
-          location: "",
-        });
-      }
-
+      
+      // Remove password from response
+      const { password, ...userWithoutPassword } = user;
+      
+      // Login the user
       req.login(user, (err) => {
         if (err) return next(err);
-        // Return user without the password
-        const { password, ...userWithoutPassword } = user;
         res.status(201).json(userWithoutPassword);
       });
     } catch (error) {
@@ -124,11 +95,13 @@ export function setupAuth(app: Express) {
     passport.authenticate("local", (err, user, info) => {
       if (err) return next(err);
       if (!user) {
-        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+        return res.status(401).json({ message: "Invalid username or password" });
       }
+      
       req.login(user, (loginErr) => {
         if (loginErr) return next(loginErr);
-        // Return user without the password
+        
+        // Remove password from response
         const { password, ...userWithoutPassword } = user;
         return res.status(200).json(userWithoutPassword);
       });
@@ -144,7 +117,8 @@ export function setupAuth(app: Express) {
 
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    // Return user without the password
+    
+    // Remove password from response
     const { password, ...userWithoutPassword } = req.user;
     res.json(userWithoutPassword);
   });

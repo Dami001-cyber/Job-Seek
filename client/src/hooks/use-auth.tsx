@@ -4,44 +4,49 @@ import {
   useMutation,
   UseMutationResult,
 } from "@tanstack/react-query";
-import { insertUserSchema, User as SelectUser, InsertUser, UserRole } from "@shared/schema";
+import { User, insertUserSchema } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useLocation } from "wouter";
+import { z } from "zod";
+
+// Remove sensitive fields from User type
+type SafeUser = Omit<User, "password">;
 
 type AuthContextType = {
-  user: SelectUser | null;
+  user: SafeUser | null;
   isLoading: boolean;
   error: Error | null;
-  loginMutation: UseMutationResult<Omit<SelectUser, "password">, Error, LoginData>;
+  loginMutation: UseMutationResult<SafeUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
-  registerMutation: UseMutationResult<Omit<SelectUser, "password">, Error, RegisterData>;
+  registerMutation: UseMutationResult<SafeUser, Error, RegisterData>;
+  redirectToDashboard: () => string;
 };
 
-type LoginData = {
-  username: string;
-  password: string;
-};
+// Form validation schemas
+export const loginSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
 
-type RegisterData = {
-  username: string;
-  password: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: UserRole;
-};
+export const registerSchema = insertUserSchema.extend({
+  confirmPassword: z.string().min(6, "Password must be at least 6 characters"),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+type LoginData = z.infer<typeof loginSchema>;
+type RegisterData = z.infer<typeof registerSchema>;
 
 export const AuthContext = createContext<AuthContextType | null>(null);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
-  const [, navigate] = useLocation();
-  
   const {
     data: user,
     error,
     isLoading,
-  } = useQuery<SelectUser | null, Error>({
+  } = useQuery<SafeUser | null, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
@@ -51,23 +56,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await apiRequest("POST", "/api/login", credentials);
       return await res.json();
     },
-    onSuccess: (user: Omit<SelectUser, "password">) => {
-      queryClient.setQueryData(["/api/user"], user);
-      
-      // Redirect based on user role
-      if (user.role === UserRole.JOB_SEEKER) {
-        navigate("/dashboard/job-seeker");
-      } else if (user.role === UserRole.EMPLOYER) {
-        navigate("/dashboard/employer");
-      } else if (user.role === UserRole.ADMIN) {
-        navigate("/dashboard/admin");
-      } else {
-        navigate("/");
-      }
-      
+    onSuccess: (userData: SafeUser) => {
+      queryClient.setQueryData(["/api/user"], userData);
       toast({
-        title: "Login successful",
-        description: `Welcome back, ${user.firstName}!`,
+        title: "Logged in successfully",
+        description: `Welcome back, ${userData.firstName}!`,
       });
     },
     onError: (error: Error) => {
@@ -80,27 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (userData: RegisterData) => {
-      const res = await apiRequest("POST", "/api/register", userData);
+    mutationFn: async (data: RegisterData) => {
+      // Remove confirmPassword before sending to API
+      const { confirmPassword, ...credentials } = data;
+      const res = await apiRequest("POST", "/api/register", credentials);
       return await res.json();
     },
-    onSuccess: (user: Omit<SelectUser, "password">) => {
-      queryClient.setQueryData(["/api/user"], user);
-      
-      // Redirect based on user role
-      if (user.role === UserRole.JOB_SEEKER) {
-        navigate("/dashboard/job-seeker");
-      } else if (user.role === UserRole.EMPLOYER) {
-        navigate("/dashboard/employer");
-      } else if (user.role === UserRole.ADMIN) {
-        navigate("/dashboard/admin");
-      } else {
-        navigate("/");
-      }
-      
+    onSuccess: (userData: SafeUser) => {
+      queryClient.setQueryData(["/api/user"], userData);
       toast({
         title: "Registration successful",
-        description: `Welcome, ${user.firstName}!`,
+        description: `Welcome to Seek with Dami, ${userData.firstName}!`,
       });
     },
     onError: (error: Error) => {
@@ -118,7 +101,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
-      navigate("/");
       toast({
         title: "Logged out successfully",
       });
@@ -131,6 +113,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
   });
+  
+  const redirectToDashboard = () => {
+    if (!user) return "/auth";
+    
+    switch (user.role) {
+      case "job_seeker":
+        return "/dashboard/seeker";
+      case "employer":
+        return "/dashboard/employer";
+      case "admin":
+        return "/dashboard/admin";
+      default:
+        return "/";
+    }
+  };
 
   return (
     <AuthContext.Provider
@@ -141,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        redirectToDashboard,
       }}
     >
       {children}

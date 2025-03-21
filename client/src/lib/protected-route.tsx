@@ -1,21 +1,17 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
-import { Redirect, Route, useLocation } from "wouter";
-import { UserRole } from "@shared/schema";
-
-interface ProtectedRouteProps {
-  path: string;
-  component: React.ComponentType;
-  requiredRole?: UserRole[];
-}
+import { Redirect, Route } from "wouter";
 
 export function ProtectedRoute({
   path,
   component: Component,
-  requiredRole,
-}: ProtectedRouteProps) {
+  roles,
+}: {
+  path: string;
+  component: () => React.JSX.Element;
+  roles?: string[];
+}) {
   const { user, isLoading } = useAuth();
-  const [location] = useLocation();
 
   if (isLoading) {
     return (
@@ -27,31 +23,24 @@ export function ProtectedRoute({
     );
   }
 
+  // If no user is logged in, redirect to auth page
   if (!user) {
     return (
       <Route path={path}>
-        <Redirect to={`/auth?redirect=${encodeURIComponent(location)}`} />
+        <Redirect to="/auth" />
       </Route>
     );
   }
 
-  if (requiredRole && !requiredRole.includes(user.role as UserRole)) {
-    // Redirect to the appropriate dashboard based on role
-    let redirectPath = "/";
-    if (user.role === UserRole.JOB_SEEKER) {
-      redirectPath = "/dashboard/job-seeker";
-    } else if (user.role === UserRole.EMPLOYER) {
-      redirectPath = "/dashboard/employer";
-    } else if (user.role === UserRole.ADMIN) {
-      redirectPath = "/dashboard/admin";
-    }
-
+  // If roles are specified and user's role is not in the allowed roles, redirect to dashboard
+  if (roles && !roles.includes(user.role)) {
     return (
       <Route path={path}>
-        <Redirect to={redirectPath} />
+        <Redirect to="/" />
       </Route>
     );
   }
 
+  // Otherwise, render the requested component
   return <Route path={path} component={Component} />;
 }
