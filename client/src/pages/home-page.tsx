@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Job, Company } from "@shared/schema";
-import { CheckCircle, ExternalLink, ArrowRight, Users, Search, Bookmark, Send } from "lucide-react";
+import { CheckCircle, ExternalLink, ArrowRight, Users, Search, Bookmark, Send, User } from "lucide-react";
 
 export default function HomePage() {
   const { user } = useAuth();

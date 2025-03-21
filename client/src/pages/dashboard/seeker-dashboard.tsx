@@ -135,7 +135,7 @@ export default function SeekerDashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-gray-600 font-medium">Saved Jobs</h3>
               <div className="h-10 w-10 bg-green-50 rounded-full flex items-center justify-center text-green-500">
-                <BookmarkSimple weight="fill" size={20} />
+                <Bookmark size={20} />
               </div>
             </div>
             {isLoadingSavedJobs ? (
@@ -356,7 +356,7 @@ export default function SeekerDashboard() {
                             className="h-8 w-8 mr-4"
                             onClick={() => navigate(`/jobs/${job.id}`)}
                           >
-                            <BookmarkSimple size={20} className="text-gray-400" />
+                            <Bookmark size={20} className="text-gray-400" />
                           </Button>
                           <span className="font-medium text-gray-900 text-sm">
                             {job.salaryMin && job.salaryMax 
