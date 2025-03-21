@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User, Job, Company } from "@shared/schema";
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [usersSearchQuery, setUsersSearchQuery] = useState("");
@@ -49,41 +51,29 @@ export default function AdminDashboard() {
   
   // Fetch users
   const { 
-    data: users, 
+    data: users = [], 
     isLoading: isLoadingUsers 
   } = useQuery<User[]>({
     queryKey: ["/api/admin/users"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/users");
-      if (!res.ok) throw new Error("Failed to fetch users");
-      return res.json();
-    },
+    enabled: !!user && user.role === 'admin', // Only fetch if user is authenticated and is admin
   });
   
   // Fetch jobs
   const { 
-    data: jobs, 
+    data: jobs = [], 
     isLoading: isLoadingJobs 
   } = useQuery<(Job & { company?: Company })[]>({
     queryKey: ["/api/jobs", "admin"],
-    queryFn: async () => {
-      const res = await fetch("/api/jobs?admin=true");
-      if (!res.ok) throw new Error("Failed to fetch jobs");
-      return res.json();
-    },
+    enabled: !!user && user.role === 'admin', // Only fetch if user is authenticated and is admin
   });
   
   // Fetch companies
   const { 
-    data: companies, 
+    data: companies = [], 
     isLoading: isLoadingCompanies 
   } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
-    queryFn: async () => {
-      const res = await fetch("/api/companies");
-      if (!res.ok) throw new Error("Failed to fetch companies");
-      return res.json();
-    },
+    enabled: !!user && user.role === 'admin', // Only fetch if user is authenticated and is admin
   });
 
   // Update user status mutation
