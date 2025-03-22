@@ -1,14 +1,26 @@
-loginMutation: useMutation({
-      mutationFn: (data) => apiRequest("/api/login", { method: "POST", body: data }),
-      onSuccess: (data) => {
-        setUser(data);
-        // Redirect based on user role
-        if (data.role === 'employer') {
-          window.location.href = '/dashboard/employer';
-        } else if (data.role === 'job_seeker') {
-          window.location.href = '/dashboard/seeker';
-        } else if (data.role === 'admin') {
-          window.location.href = '/dashboard/admin';
-        }
-      },
-    }),
+import { useState, useEffect } from "react";
+
+export const useAuth = () => {
+    const [user, setUser] = useState(null);
+
+    const loginMutation = {
+        mutate: async (data) => {
+            // Perform login logic here
+            // For example, make an API call to authenticate the user
+        },
+    };
+
+    const registerMutation = {
+        mutate: async (data) => {
+            // Perform registration logic here
+            // For example, make an API call to register the user
+        },
+    };
+
+    const redirectToDashboard = () => {
+        // Logic to redirect to the dashboard
+        return "/dashboard";
+    };
+
+    return { user, loginMutation, registerMutation, redirectToDashboard };
+};
