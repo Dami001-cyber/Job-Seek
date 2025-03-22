@@ -6,7 +6,6 @@ import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "./use-toast";
 import { z } from "zod";
 
-// Remove sensitive fields from User type
 type SafeUser = Omit<User, "password">;
 
 type AuthContextType = {
@@ -19,7 +18,6 @@ type AuthContextType = {
   redirectToDashboard: () => string;
 };
 
-// Form validation schemas
 export const loginSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -108,7 +106,6 @@ function useRegisterMutation() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { toast } = useToast();
   const {
     data: user,
     error,
