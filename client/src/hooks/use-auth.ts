@@ -39,7 +39,7 @@ export const registerSchema = z.object({
 type LoginData = z.infer<typeof loginSchema>;
 type RegisterData = z.infer<typeof registerSchema>;
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 function useLoginMutation() {
   const { toast } = useToast();
